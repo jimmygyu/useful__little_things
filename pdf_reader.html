@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>초경량 PDF 인스턴트 번역기 & 단어장</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --panel: #111827;
+      --card: #1e293b;
+      --border: #1f2937;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      background: rgba(56, 189, 248, 0.18);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .title {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .view-tabs {
+      display: flex;
+      background: #0f172a;
+      padding: 2px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .view-tab {
+      background: none;
+      border: none;
+      color: var(--muted);
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .view-tab.active {
+      background: var(--card);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #1d4ed8; }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #334155; }
+
+    #file-input { display: none; }
+
+    /* Main Container */
+    #main-layout {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #viewer-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 16px;
+      position: relative;
+    }
+
+    /* Clean Reader Mode Container */
+    #reader-container {
+      flex: 1;
+      overflow-y: auto;
+      display: none;
+      justify-content: center;
+      padding: 36px 20px;
+      background: #090d16;
+    }
+
+    .reader-paper {
+      max-width: 780px;
+      width: 100%;
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 44px 40px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+      line-height: 1.85;
+      font-size: 16px;
+      color: #e2e8f0;
+      user-select: text;
+    }
+
+    .reader-paper p {
+      margin-bottom: 20px;
+      text-align: justify;
+    }
+
+    .reader-paper .page-divider {
+      border-top: 1px dashed #334155;
+      margin: 36px 0;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* Drop Zone */
+    #drop-zone {
+      border: 2px dashed #334155;
+      border-radius: 14px;
+      padding: 60px 40px;
+      text-align: center;
+      max-width: 560px;
+      margin-top: 60px;
+      cursor: pointer;
+      background: #0f172a;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #drop-zone:hover, #drop-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.05);
+      transform: translateY(-2px);
+    }
+    #drop-zone h3 { font-size: 18px; margin-bottom: 10px; }
+    #drop-zone p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+    /* PDF Page Structure */
+    .pdf-page-container {
+      position: relative;
+      margin-bottom: 30px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.75);
+      border-radius: 4px;
+      background: #ffffff;
+      flex-shrink: 0 !important;
+    }
+
+    .pdf-canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: 4px;
+    }
+
+    /* Interaction layer: word geometry comes from the PDF's real glyph widths */
+    .pdf-page-container { user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+    .pdf-page-container.on-word { cursor: pointer; }
+    .pdf-page-container.selecting { cursor: text; }
+    .hl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+    .hl { position: absolute; border-radius: 2px; mix-blend-mode: multiply; }
+    .hl.hover { background: rgba(56, 189, 248, 0.28); }
+    .hl.sel { background: rgba(37, 99, 235, 0.38); }
+    .page-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 13px; }
+
+    .reader-paper ::selection { background: rgba(56, 189, 248, 0.45); }
+
+    /* Zero UI Glassmorphic Tooltip */
+    #instant-tooltip {
+      position: fixed;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #f8fafc;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.65), 0 4px 10px rgba(0, 0, 0, 0.3);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      line-height: 1.45;
+      padding: 6px 12px;
+      max-width: 360px;
+      word-break: break-word;
+      pointer-events: none;
+      user-select: none;
+      z-index: 2147483647;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.12s ease-out, visibility 0.12s;
+    }
+    #instant-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* Vocabulary Sidebar */
+    #vocab-sidebar {
+      width: 320px;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+      flex-shrink: 0;
+    }
+
+    #vocab-sidebar.hidden { display: none; }
+
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .vocab-count {
+      font-size: 11px;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .sidebar-tools {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+    }
+
+    .search-input {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 8px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    .vocab-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .vocab-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      position: relative;
+    }
+    .vocab-item:hover { border-color: rgba(56, 189, 248, 0.4); }
+
+    .vocab-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .vocab-word {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .vocab-meaning {
+      font-size: 12px;
+      color: #e2e8f0;
+      line-height: 1.4;
+    }
+
+    .vocab-time {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .vocab-del-btn {
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .vocab-del-btn:hover { color: #ef4444; }
+
+    .vocab-empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 30px;
+      line-height: 1.6;
+    }
+
+    .sidebar-footer {
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .small-btn {
+      background: var(--card);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 4px 7px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .small-btn:hover {
+      color: var(--text);
+      background: #334155;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-group">
+      <span class="badge">TRANSLATOR</span>
+      <span class="title">인스턴트 번역기</span>
+      
+      <div class="view-tabs">
+        <button class="view-tab active" id="tab-pdf">📄 PDF 뷰</button>
+        <button class="view-tab" id="tab-reader">📖 텍스트 뷰</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <label class="btn" for="file-input">📂 PDF 열기</label>
+      <input type="file" id="file-input" accept="application/pdf">
+      <button class="btn btn-secondary" id="toggle-sidebar">
+        📖 단어장 <span class="vocab-count" id="header-vocab-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="main-layout">
+    <!-- PDF View -->
+    <div id="viewer-container">
+      <div id="drop-zone">
+        <h3>📄 PDF 파일을 여기에 끌어다 놓으세요</h3>
+        <p>또는 우측 상단의 <strong>[PDF 열기]</strong>를 클릭하세요.<br>영단어를 <strong>클릭 한 번</strong>하면 바로 위에 뜻이 뜹니다!</p>
+      </div>
+    </div>
+
+    <!-- Clean Text Reader View -->
+    <div id="reader-container">
+      <div class="reader-paper" id="reader-content"></div>
+    </div>
+
+    <!-- Vocabulary History Sidebar -->
+    <div id="vocab-sidebar" class="hidden">
+      <div class="sidebar-header">
+        <h2>📚 번역 단어장 <span class="vocab-count" id="sidebar-vocab-count">0</span></h2>
+        <button class="vocab-del-btn" id="close-sidebar" title="닫기">✕</button>
+      </div>
+      <div class="sidebar-tools">
+        <input type="text" class="search-input" id="search-vocab" placeholder="단어 검색...">
+      </div>
+      <div class="vocab-list" id="vocab-list">
+        <div class="vocab-empty">
+          아직 찾은 단어가 없습니다.<br>PDF에서 영단어를 클릭해보세요!
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button class="small-btn" id="export-vocab">📥 텍스트 저장</button>
+        <button class="small-btn" id="clear-vocab">🗑️ 전체 비우기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="instant-tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <script>
+'use strict';
+/*
+ * PDF instant translator.
+ *
+ * Why words are located exactly:
+ *   pdf.js text content only gives the position/width of whole runs of text.
+ *   Guessing character positions inside a run (average char width, or a
+ *   browser fallback font) drifts on proportional fonts, so clicks hit the
+ *   neighbouring word. Instead we read the page's operator list, which
+ *   contains every glyph the renderer draws together with its real advance
+ *   width from the embedded font, build a per-font width table, and lay each
+ *   run out with those widths. Justification stretch is assigned to spaces.
+ *   Selection is done by our own hit-testing on that geometry (no invisible
+ *   DOM text that can be mis-measured by the browser).
+ */
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const CMAP_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
+const STANDARD_FONT_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/';
+const RENDER_SCALE = 1.35;
+const OPS = pdfjsLib.OPS;
+
+const $ = (id) => document.getElementById(id);
+const viewerContainer = $('viewer-container');
+const readerContainer = $('reader-container');
+const readerContent = $('reader-content');
+const tabPdf = $('tab-pdf');
+const tabReader = $('tab-reader');
+const fileInput = $('file-input');
+const tooltip = $('instant-tooltip');
+const vocabSidebar = $('vocab-sidebar');
+const vocabListEl = $('vocab-list');
+const searchVocabInput = $('search-vocab');
+
+const app = {
+  doc: null,
+  pages: [],          // { num, viewport, container, canvas, hlLayer, words, lines, state }
+  translateFn: null,  // overridable (tests)
+  readerBuiltFor: null,
+};
+window.__app = app;
+
+/* ------------------------------------------------------------------ */
+/* View tabs                                                           */
+/* ------------------------------------------------------------------ */
+tabPdf.addEventListener('click', () => {
+  tabPdf.classList.add('active'); tabReader.classList.remove('active');
+  viewerContainer.style.display = 'flex'; readerContainer.style.display = 'none';
+  hideTooltip();
+});
+tabReader.addEventListener('click', () => {
+  tabReader.classList.add('active'); tabPdf.classList.remove('active');
+  viewerContainer.style.display = 'none'; readerContainer.style.display = 'flex';
+  hideTooltip();
+  buildReaderView();
+});
+
+/* ------------------------------------------------------------------ */
+/* Vocabulary                                                          */
+/* ------------------------------------------------------------------ */
+const STORAGE_KEY = 'instant_pdf_vocab_history_v1';
+let vocabHistory = [];
+
+function loadVocab() {
+  try { vocabHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { vocabHistory = []; }
+  if (!Array.isArray(vocabHistory)) vocabHistory = [];
+  renderVocab();
+}
+function saveVocab() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(vocabHistory)); } catch {} }
+
+function addWordToHistory(word, meaning) {
+  word = (word || '').trim(); meaning = (meaning || '').trim();
+  if (!word || !meaning || !/[a-zA-Z]/.test(word) || word.length > 80) return;
+  vocabHistory = vocabHistory.filter((v) => v.word.toLowerCase() !== word.toLowerCase());
+  const now = new Date();
+  vocabHistory.unshift({
+    word, meaning,
+    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    date: now.toLocaleDateString(),
+  });
+  if (vocabHistory.length > 2000) vocabHistory.length = 2000;
+  saveVocab(); renderVocab();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderVocab() {
+  $('header-vocab-count').textContent = vocabHistory.length;
+  $('sidebar-vocab-count').textContent = vocabHistory.length;
+  const q = (searchVocabInput.value || '').trim().toLowerCase();
+  const list = q ? vocabHistory.filter((v) => v.word.toLowerCase().includes(q) || v.meaning.toLowerCase().includes(q)) : vocabHistory;
+  if (!list.length) {
+    vocabListEl.innerHTML = `<div class="vocab-empty">${q ? '검색 결과가 없습니다.' : '아직 찾은 단어가 없습니다.<br>PDF에서 영단어를 클릭해보세요!'}</div>`;
+    return;
+  }
+  vocabListEl.innerHTML = list.map((v) => `
+    <div class="vocab-item">
+      <div class="vocab-top">
+        <span class="vocab-word">${escapeHtml(v.word)}</span>
+        <button class="vocab-del-btn" data-word="${escapeHtml(v.word)}" title="삭제">✕</button>
+      </div>
+      <div class="vocab-meaning">${escapeHtml(v.meaning)}</div>
+      <div class="vocab-time">${escapeHtml(v.date)} ${escapeHtml(v.time)}</div>
+    </div>`).join('');
+}
+
+vocabListEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.vocab-del-btn');
+  if (!btn) return;
+  vocabHistory = vocabHistory.filter((v) => v.word !== btn.dataset.word);
+  saveVocab(); renderVocab();
+});
+searchVocabInput.addEventListener('input', renderVocab);
+$('export-vocab').addEventListener('click', () => {
+  if (!vocabHistory.length) return alert('내보낼 단어가 없습니다.');
+  const txt = vocabHistory.map((v) => `${v.word} : ${v.meaning} (${v.date})`).join('\n');
+  const url = URL.createObjectURL(new Blob([txt], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `pdf_vocabulary_${new Date().toISOString().slice(0, 10)}.txt`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('clear-vocab').addEventListener('click', () => {
+  if (vocabHistory.length && confirm('저장된 단어장을 모두 비우시겠습니까?')) { vocabHistory = []; saveVocab(); renderVocab(); }
+});
+$('toggle-sidebar').addEventListener('click', () => vocabSidebar.classList.toggle('hidden'));
+$('close-sidebar').addEventListener('click', () => vocabSidebar.classList.add('hidden'));
+
+/* ------------------------------------------------------------------ */
+/* Tooltip + translation                                               */
+/* ------------------------------------------------------------------ */
+const translationCache = new Map();
+let requestSeq = 0;
+
+function hideTooltip() {
+  requestSeq++;
+  tooltip.classList.remove('visible');
+  tooltip.setAttribute('aria-hidden', 'true');
+}
+
+function showTooltip(text, rect) {
+  tooltip.textContent = text;
+  tooltip.style.left = '0px'; tooltip.style.top = '0px';
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight, m = 8;
+  let x = rect.left + rect.width / 2 - tw / 2;
+  x = Math.max(m, Math.min(window.innerWidth - tw - m, x));
+  let y = rect.top - th - m;
+  if (y < m) y = rect.bottom + m;
+  tooltip.style.left = `${Math.round(x)}px`;
+  tooltip.style.top = `${Math.round(y)}px`;
+  tooltip.classList.add('visible');
+  tooltip.setAttribute('aria-hidden', 'false');
+}
+
+async function googleTranslate(text) {
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=${encodeURIComponent(text)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.[0]) ? data[0].map((c) => c[0] || '').join('').trim() : '';
+}
+
+async function translateAndShow(text, rect) {
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 1000 || !/[a-zA-Z]/.test(text)) return;
+  app.lastRequested = text;
+  const seq = ++requestSeq;
+  let result = translationCache.get(text);
+  if (!result) {
+    showTooltip('…', rect);
+    try {
+      result = await (app.translateFn || googleTranslate)(text);
+    } catch (err) {
+      if (seq === requestSeq) showTooltip('번역 실패 (네트워크 확인)', rect);
+      return;
+    }
+    if (!result) return;
+    translationCache.set(text, result);
+  }
+  if (seq !== requestSeq) return;
+  showTooltip(result, rect);
+  if (text.split(' ').length <= 4) addWordToHistory(text, result);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { hideTooltip(); clearSelection(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && sel.text && !window.getSelection().toString()) {
+    navigator.clipboard?.writeText(sel.text).catch(() => {});
+  }
+});
+viewerContainer.addEventListener('scroll', hideTooltip, { passive: true });
+readerContainer.addEventListener('scroll', hideTooltip, { passive: true });
+
+/* ------------------------------------------------------------------ */
+/* Word geometry engine                                                */
+/* ------------------------------------------------------------------ */
+const WORD_RE = /[\p{L}\p{N}]+(?:['’][\p{L}]+)*/gu;
+const HYPHENS = /[-\u00AD\u2010\u2011]$/;
+
+/** Per-font table: char -> advance width (glyph units, 1/1000 em typically). */
+async function buildWidthTables(page) {
+  const opList = await page.getOperatorList();
+  const tables = new Map();
+  const stack = [];
+  let font = null;
+  const { fnArray, argsArray } = opList;
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i];
+    if (fn === OPS.save) stack.push(font);
+    else if (fn === OPS.restore) { if (stack.length) font = stack.pop(); }
+    else if (fn === OPS.setFont) font = argsArray[i][0];
+    else if (fn === OPS.showText || fn === OPS.showSpacedText || fn === OPS.nextLineShowText || fn === OPS.nextLineSetSpacingShowText) {
+      const glyphs = argsArray[i].find(Array.isArray);
+      if (!glyphs || !font) continue;
+      let t = tables.get(font);
+      if (!t) tables.set(font, (t = { single: new Map(), multi: new Map() }));
+      for (const g of glyphs) {
+        if (!g || typeof g !== 'object' || !g.unicode || !(g.width > 0)) continue;
+        const u = g.unicode.normalize('NFKC');
+        if (u.length === 1) { if (!t.single.has(u)) t.single.set(u, g.width); }
+        else for (const ch of u) if (!t.multi.has(ch)) t.multi.set(ch, g.width / u.length);
+      }
+    }
+  }
+  const out = new Map();
+  for (const [name, t] of tables) {
+    const m = new Map(t.multi);
+    for (const [k, v] of t.single) m.set(k, v);
+    out.set(name, m);
+  }
+  return out;
+}
+
+function charWidthsFor(str, table, fontPx, totalPx) {
+  const n = str.length;
+  const w = new Array(n);
+  let known = 0, knownCount = 0;
+  if (table) for (let i = 0; i < n; i++) { const v = table.get(str[i]); if (v) { known += v; knownCount++; } }
+  const avg = knownCount ? known / knownCount : 500;
+  const spaceW = (table && table.get(' ')) || avg * 0.5;
+  let natural = 0, spaces = 0;
+  for (let i = 0; i < n; i++) {
+    const ch = str[i];
+    let v = table && table.get(ch);
+    if (!v) v = /\s/.test(ch) ? spaceW : avg;
+    if (/\s/.test(ch)) spaces++;
+    w[i] = v; natural += v;
+  }
+  if (natural <= 0) return w.fill(totalPx / Math.max(1, n));
+  const naturalPx = natural / 1000 * fontPx;
+  const ratio = totalPx / naturalPx;
+  // Glyph units look sane and run is stretched: give the stretch to spaces (justification).
+  if (spaces && ratio > 1.002 && ratio < 1.6) {
+    const extra = (totalPx - naturalPx) / spaces;
+    for (let i = 0; i < n; i++) w[i] = w[i] / 1000 * fontPx + (/\s/.test(str[i]) ? extra : 0);
+  } else {
+    const k = totalPx / natural;
+    for (let i = 0; i < n; i++) w[i] *= k;
+  }
+  return w;
+}
+
+async function buildWords(page, viewport) {
+  const [tables, tc] = await Promise.all([buildWidthTables(page), page.getTextContent()]);
+  const words = [];
+  const items = tc.items;
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    const str = item.str;
+    if (!str || !str.trim()) continue;
+    const m = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    if (Math.abs(m[1]) > 0.01 * Math.abs(m[0]) || m[0] <= 0) continue; // only horizontal text
+    const fontPx = Math.hypot(m[2], m[3]);
+    const totalPx = item.width * viewport.scale;
+    if (!(fontPx > 0) || !(totalPx > 0)) continue;
+    const style = tc.styles[item.fontName] || {};
+    const ascent = style.ascent > 0 ? style.ascent : 0.8;
+    const descent = style.descent < 0 ? style.descent : -0.2;
+    const baseX = m[4], baseY = m[5];
+    const cw = charWidthsFor(str, tables.get(item.fontName), fontPx, totalPx);
+    const prefix = new Float64Array(str.length + 1);
+    for (let i = 0; i < str.length; i++) prefix[i + 1] = prefix[i] + cw[i];
+    const top = baseY - ascent * fontPx, bottom = baseY - descent * fontPx;
+    WORD_RE.lastIndex = 0;
+    let mm;
+    while ((mm = WORD_RE.exec(str))) {
+      const s = mm.index, e = s + mm[0].length;
+      let j = e; while (j < str.length && /[^\s\p{L}\p{N}]/u.test(str[j])) j++;
+      const trail = str.slice(e, j);
+      words.push({
+        text: mm[0], item: idx, s, e, atStart: s === 0, atEnd: e === str.length,
+        x0: baseX + prefix[s], x1: baseX + prefix[e], top, bottom, baseY, fontPx,
+        trail, hyphenEnd: j === str.length && HYPHENS.test(trail),
+      });
+    }
+  }
+  // Merge pieces of one word split across adjacent runs ("consis" + "tently").
+  const merged = [];
+  for (const w of words) {
+    const p = merged[merged.length - 1];
+    if (p && p.atEnd && !p.trail && w.atStart && w.item === p.item + 1 &&
+        Math.abs(w.baseY - p.baseY) < 0.3 * p.fontPx && w.x0 - p.x1 < 0.2 * p.fontPx && w.x0 - p.x1 > -0.3 * p.fontPx) {
+      p.text += w.text; p.x1 = Math.max(p.x1, w.x1); p.top = Math.min(p.top, w.top); p.bottom = Math.max(p.bottom, w.bottom);
+      p.item = w.item; p.e = w.e; p.atEnd = w.atEnd; p.trail = w.trail; p.hyphenEnd = w.hyphenEnd;
+      continue;
+    }
+    merged.push(w);
+  }
+  // Lines + hyphenation links.
+  let line = -1, prev = null;
+  merged.forEach((w, i) => {
+    w.idx = i;
+    if (!prev || Math.abs(w.baseY - prev.baseY) > 0.5 * Math.min(w.fontPx, prev.fontPx) || w.x0 < prev.x0 - 1) line++;
+    w.line = line;
+    if (prev && prev.hyphenEnd && prev.line !== w.line) { prev.joinNext = i; w.joinPrev = i - 1; }
+    prev = w;
+  });
+  return merged;
+}
+
+/** Find word at page point. strict=false snaps to nearest word in that line. */
+function hitTest(p, x, y, strict = true) {
+  const words = p.words;
+  if (!words) return -1;
+  let best = -1, bestScore = Infinity;
+  for (const w of words) {
+    const h = w.bottom - w.top;
+    const padY = strict ? h * 0.15 : h * 0.6;
+    if (y < w.top - padY || y > w.bottom + padY) continue;
+    const dx = x < w.x0 ? w.x0 - x : x > w.x1 ? x - w.x1 : 0;
+    const dy = y < w.top ? w.top - y : y > w.bottom ? y - w.bottom : 0;
+    if (strict && dx > Math.max(3, w.fontPx * 0.3)) continue;
+    const score = dx + dy * 3;
+    if (score < bestScore) { bestScore = score; best = w.idx; }
+  }
+  if (best < 0 && !strict) {
+    // nearest by vertical distance (dragging into margins/gaps between lines)
+    for (const w of words) {
+      const cy = (w.top + w.bottom) / 2;
+      const dx = x < w.x0 ? w.x0 - x : x > w.x1 ? x - w.x1 : 0;
+      const score = Math.abs(y - cy) * 3 + dx;
+      if (score < bestScore) { bestScore = score; best = w.idx; }
+    }
+  }
+  return best;
+}
+app.hitTest = hitTest;
+
+/* ------------------------------------------------------------------ */
+/* Selection + highlight                                               */
+/* ------------------------------------------------------------------ */
+const sel = { page: null, anchor: -1, focus: -1, text: '', dragging: false, moved: false };
+app.sel = sel;
+
+function expandRange(p, a, b) {
+  let lo = Math.min(a, b), hi = Math.max(a, b);
+  if (p.words[lo].joinPrev !== undefined) lo = p.words[lo].joinPrev;
+  if (p.words[hi].joinNext !== undefined) hi = p.words[hi].joinNext;
+  return [lo, hi];
+}
+
+function rangeText(p, lo, hi) {
+  let out = '';
+  for (let i = lo; i <= hi; i++) {
+    const w = p.words[i];
+    out += w.text;
+    if (i === hi) break;
+    if (w.joinNext === i + 1) continue;              // hyphenated line break: glue
+    out += (w.trail || '') + ' ';
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+function rangeRects(p, lo, hi) {
+  const rects = [];
+  let cur = null;
+  for (let i = lo; i <= hi; i++) {
+    const w = p.words[i];
+    if (cur && cur.line === w.line) {
+      cur.x1 = w.x1; cur.top = Math.min(cur.top, w.top); cur.bottom = Math.max(cur.bottom, w.bottom);
+    } else {
+      cur = { line: w.line, x0: w.x0, x1: w.x1, top: w.top, bottom: w.bottom };
+      rects.push(cur);
+    }
+  }
+  return rects;
+}
+
+function drawRects(p, rects, cls) {
+  p.hlLayer.querySelectorAll(`.hl.${cls}`).forEach((n) => n.remove());
+  for (const r of rects) {
+    const d = document.createElement('div');
+    d.className = `hl ${cls}`;
+    d.style.left = `${r.x0 - 1}px`; d.style.top = `${r.top}px`;
+    d.style.width = `${r.x1 - r.x0 + 2}px`; d.style.height = `${r.bottom - r.top}px`;
+    p.hlLayer.appendChild(d);
+  }
+}
+
+function clearSelection() {
+  if (sel.page && sel.page.hlLayer) drawRects(sel.page, [], 'sel');
+  sel.page = null; sel.anchor = sel.focus = -1; sel.text = '';
+}
+
+function setHover(p, idx) {
+  if (app.hoverPage && app.hoverPage !== p && app.hoverPage.hlLayer) drawRects(app.hoverPage, [], 'hover');
+  app.hoverPage = p;
+  if (!p.hlLayer) return;
+  if (idx < 0) { drawRects(p, [], 'hover'); return; }
+  const [lo, hi] = expandRange(p, idx, idx);
+  drawRects(p, rangeRects(p, lo, hi), 'hover');
+}
+
+function updateSelection() {
+  const p = sel.page;
+  const [lo, hi] = expandRange(p, sel.anchor, sel.focus);
+  drawRects(p, rangeRects(p, lo, hi), 'sel');
+  sel.lo = lo; sel.hi = hi;
+  sel.text = rangeText(p, lo, hi);
+}
+
+function clientRectOfRange(p) {
+  const rects = rangeRects(p, sel.lo, sel.hi);
+  const box = p.container.getBoundingClientRect();
+  const r = rects[0];
+  const last = rects[rects.length - 1];
+  const left = rects.length > 1 ? Math.min(...rects.map((q) => q.x0)) : r.x0;
+  const right = rects.length > 1 ? Math.max(...rects.map((q) => q.x1)) : r.x1;
+  return { left: box.left + left, top: box.top + r.top, width: right - left, height: last.bottom - r.top, bottom: box.top + last.bottom };
+}
+
+function pagePoint(p, e) {
+  const box = p.container.getBoundingClientRect();
+  return [e.clientX - box.left, e.clientY - box.top];
+}
+
+function attachPageEvents(p) {
+  const c = p.container;
+  c.addEventListener('pointermove', (e) => {
+    const [x, y] = pagePoint(p, e);
+    if (sel.dragging && sel.page === p) {
+      const idx = hitTest(p, x, y, false);
+      if (idx >= 0 && idx !== sel.focus) { sel.focus = idx; sel.moved = true; updateSelection(); }
+      return;
+    }
+    if (e.buttons) return;
+    const idx = hitTest(p, x, y, true);
+    c.classList.toggle('on-word', idx >= 0);
+    setHover(p, idx);
+  });
+  c.addEventListener('pointerleave', () => { if (!sel.dragging) { setHover(p, -1); c.classList.remove('on-word'); } });
+  c.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const [x, y] = pagePoint(p, e);
+    const idx = hitTest(p, x, y, true);
+    hideTooltip();
+    clearSelection();
+    if (idx < 0) return;
+    e.preventDefault();
+    c.setPointerCapture?.(e.pointerId);
+    sel.page = p; sel.anchor = sel.focus = idx; sel.dragging = true; sel.moved = false;
+    c.classList.add('selecting');
+    setHover(p, -1);
+    updateSelection();
+  });
+  const finish = () => {
+    if (!sel.dragging || sel.page !== p) return;
+    sel.dragging = false;
+    c.classList.remove('selecting');
+    if (sel.text) translateAndShow(sel.text, clientRectOfRange(p));
+  };
+  c.addEventListener('pointerup', finish);
+  c.addEventListener('pointercancel', finish);
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.pdf-page-container, #instant-tooltip, #vocab-sidebar, header')) return;
+  hideTooltip(); clearSelection();
+});
+
+/* ------------------------------------------------------------------ */
+/* Rendering (lazy, only pages near the viewport)                      */
+/* ------------------------------------------------------------------ */
+let observer = null;
+let renderChain = Promise.resolve();
+
+async function openPdf(data) {
+  hideTooltip(); clearSelection();
+  if (observer) observer.disconnect();
+  if (app.doc) { try { await app.doc.destroy(); } catch {} }
+  app.doc = null; app.pages = []; app.readerBuiltFor = null;
+  viewerContainer.innerHTML = '<div style="color:#94a3b8;margin-top:40px;font-size:14px;">⏳ PDF 여는 중...</div>';
+  readerContent.innerHTML = '';
+
+  const doc = await pdfjsLib.getDocument({ data, cMapUrl: CMAP_URL, cMapPacked: true, standardFontDataUrl: STANDARD_FONT_URL }).promise;
+  app.doc = doc;
+  viewerContainer.innerHTML = '';
+  observer = new IntersectionObserver(onIntersect, { root: viewerContainer, rootMargin: '1200px 0px' });
+
+  // Size every placeholder from page 1 (cheap); real sizes are applied when a page renders.
+  const first = (await doc.getPage(1)).getViewport({ scale: RENDER_SCALE });
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= doc.numPages; n++) {
+    const container = document.createElement('div');
+    container.className = 'pdf-page-container';
+    setContainerSize(container, first);
+    container.dataset.page = n;
+    container.innerHTML = `<div class="page-loading">${n} / ${doc.numPages}</div>`;
+    frag.appendChild(container);
+    const p = { num: n, page: null, viewport: null, container, canvas: null, hlLayer: null, words: null, state: 'empty', visible: false };
+    app.pages.push(p);
+    attachPageEvents(p);
+  }
+  viewerContainer.appendChild(frag);
+  for (const p of app.pages) observer.observe(p.container);
+  app.ready = true;
+}
+app.openPdf = openPdf;
+
+function setContainerSize(container, vp) {
+  container.style.width = `${Math.floor(vp.width)}px`;
+  container.style.height = `${Math.floor(vp.height)}px`;
+  container.style.minHeight = container.style.height;
+}
+
+function onIntersect(entries) {
+  for (const en of entries) {
+    const p = app.pages[Number(en.target.dataset.page) - 1];
+    if (!p) continue;
+    p.visible = en.isIntersecting;
+    if (p.visible && p.state === 'empty') queueRender(p);
+    else if (!p.visible && p.state === 'done') unloadPage(p);
+  }
+}
+
+function queueRender(p) {
+  p.state = 'queued';
+  renderChain = renderChain.then(() => renderPage(p)).catch((err) => { console.error(err); p.lastError = String(err?.stack || err); p.state = 'error'; });
+  return renderChain;
+}
+app.queueRender = queueRender;
+
+async function renderPage(p) {
+  if (!p.visible || app.pages[p.num - 1] !== p) { p.state = 'empty'; return; }
+  p.state = 'rendering';
+  if (!p.page) {
+    p.page = await app.doc.getPage(p.num);
+    p.viewport = p.page.getViewport({ scale: RENDER_SCALE });
+    setContainerSize(p.container, p.viewport);
+  }
+  const { viewport, page, container } = p;
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'pdf-canvas';
+  canvas.width = Math.floor(viewport.width * dpr);
+  canvas.height = Math.floor(viewport.height * dpr);
+  canvas.style.width = `${Math.floor(viewport.width)}px`;
+  canvas.style.height = `${Math.floor(viewport.height)}px`;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
+  if (!p.words) p.words = await buildWords(page, viewport);
+  const hl = document.createElement('div');
+  hl.className = 'hl-layer';
+  container.replaceChildren(canvas, hl);
+  p.canvas = canvas; p.hlLayer = hl; p.dpr = dpr; p.state = 'done';
+  if (!p.visible) unloadPage(p);
+}
+
+function unloadPage(p) {
+  if (sel.page === p) return;
+  if (p.canvas) { p.canvas.width = 0; p.canvas.height = 0; }
+  p.canvas = null; p.hlLayer = null; p.state = 'empty';
+  p.container.innerHTML = `<div class="page-loading">${p.num}</div>`;
+}
+
+// Browser zoom changes devicePixelRatio: re-render visible pages so the canvas stays sharp.
+let lastDpr = window.devicePixelRatio || 1;
+window.addEventListener('resize', () => {
+  const d = window.devicePixelRatio || 1;
+  if (Math.abs(d - lastDpr) < 0.01) return;
+  lastDpr = d;
+  for (const p of app.pages) if (p.state === 'done' && p.visible && p.dpr !== d) { unloadPage(p); p.visible = true; queueRender(p); }
+});
+
+/* ------------------------------------------------------------------ */
+/* Reader (plain text) view                                            */
+/* ------------------------------------------------------------------ */
+async function buildReaderView() {
+  const doc = app.doc;
+  if (!doc || app.readerBuiltFor === doc) return;
+  app.readerBuiltFor = doc;
+  readerContent.innerHTML = '';
+  for (let n = 1; n <= doc.numPages; n++) {
+    if (app.doc !== doc) return;
+    const page = await doc.getPage(n);
+    const tc = await page.getTextContent();
+    const lines = [];
+    let cur = null;
+    for (const it of tc.items) {
+      if (!it.str) { if (it.hasEOL && cur) cur.eol = true; continue; }
+      const y = it.transform[5], h = Math.hypot(it.transform[2], it.transform[3]) || 10;
+      if (!cur || cur.eol || Math.abs(y - cur.y) > h * 0.5) {
+        cur = { y, h, x: it.transform[4], text: '', right: 0, eol: false };
+        lines.push(cur);
+      }
+      cur.text += it.str;
+      cur.right = Math.max(cur.right, it.transform[4] + it.width);
+      if (it.hasEOL) cur.eol = true;
+    }
+    if (n > 1) {
+      const d = document.createElement('div'); d.className = 'page-divider'; d.textContent = `— Page ${n} —`;
+      readerContent.appendChild(d);
+    }
+    const maxRight = Math.max(0, ...lines.map((l) => l.right));
+    let para = '';
+    const flush = () => { if (para.trim()) { const el = document.createElement('p'); el.textContent = para.trim(); readerContent.appendChild(el); } para = ''; };
+    lines.forEach((l, i) => {
+      const t = l.text.replace(/\s+/g, ' ').trim();
+      if (!t) return;
+      const prev = lines[i - 1];
+      if (prev && (prev.y - l.y > Math.max(prev.h, l.h) * 1.9 || (prev.right < maxRight * 0.8 && /[.!?:"”]$/.test(prev.text.trim())))) flush();
+      if (HYPHENS.test(para) && /^\p{Ll}/u.test(t)) para = para.replace(HYPHENS, '') + t;
+      else para += (para ? ' ' : '') + t;
+    });
+    flush();
+  }
+}
+
+// Reader view: click = translate the word under the cursor, drag = translate selection.
+readerContainer.addEventListener('mouseup', (e) => {
+  setTimeout(() => {
+    const s = window.getSelection();
+    if (!s) return;
+    if (s.isCollapsed) {
+      const r = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (!r || r.startContainer.nodeType !== Node.TEXT_NODE) return;
+      const text = r.startContainer.data, off = r.startOffset;
+      WORD_RE.lastIndex = 0;
+      let m;
+      while ((m = WORD_RE.exec(text))) {
+        if (m.index <= off && off <= m.index + m[0].length) {
+          const wr = document.createRange();
+          wr.setStart(r.startContainer, m.index); wr.setEnd(r.startContainer, m.index + m[0].length);
+          s.removeAllRanges(); s.addRange(wr);
+          translateAndShow(m[0], wr.getBoundingClientRect());
+          return;
+        }
+        if (m.index > off) return;
+      }
+      return;
+    }
+    const text = s.toString();
+    const rect = s.getRangeAt(0).getBoundingClientRect();
+    if (rect.width > 0) translateAndShow(text, rect);
+  }, 10);
+});
+
+/* ------------------------------------------------------------------ */
+/* File input / drag & drop                                            */
+/* ------------------------------------------------------------------ */
+function loadFile(file) {
+  if (!file || !(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return;
+  file.arrayBuffer().then((buf) => openPdf(new Uint8Array(buf))).catch((err) => {
+    viewerContainer.innerHTML = `<div style="color:#f87171;margin-top:40px;">PDF를 열 수 없습니다: ${escapeHtml(err.message)}</div>`;
+  });
+}
+fileInput.addEventListener('change', (e) => loadFile(e.target.files[0]));
+window.addEventListener('dragover', (e) => { e.preventDefault(); $('drop-zone')?.classList.add('dragover'); });
+window.addEventListener('dragleave', (e) => { e.preventDefault(); $('drop-zone')?.classList.remove('dragover'); });
+window.addEventListener('drop', (e) => { e.preventDefault(); $('drop-zone')?.classList.remove('dragover'); loadFile(e.dataTransfer.files[0]); });
+$('drop-zone')?.addEventListener('click', () => fileInput.click());
+
+loadVocab();
+
+</script>
+</body>
+</html>
